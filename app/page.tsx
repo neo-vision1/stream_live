@@ -252,7 +252,7 @@ export default function DroneDashboard() {
                             <p>Estamos a usar o Mux Player Web Component, que oferece uma reprodução HLS robusta. O problema 404 será resolvido assim que o Playback ID corresponder a um stream ativo no Mux.</p>
                         </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                        <div style={styles.buttonGroup}>
                             <button type="button" onClick={() => setIsConfigOpen(false)} style={styles.buttonSecondary}>
                                 Cancelar
                             </button>
@@ -304,12 +304,12 @@ export default function DroneDashboard() {
             {/* Cabeçalho */}
             <header style={styles.header}>
                 <div>
-                    <h2 style={{ margin: 0 }}>Central de Comando de Drones</h2>
-                    <small style={{ color: '#ccc' }}>
+                    <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Central de Comando de Drones</h2>
+                    <small style={{ color: '#ccc', fontSize: '0.75rem' }}>
                         Operador: {user.name} | ID: <span style={{ fontFamily: 'monospace' }}>{user.id}</span>
                     </small>
                 </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={styles.headerControls}>
                     <button onClick={() => setIsConfigOpen(!isConfigOpen)} style={styles.buttonSecondary}>
                         ⚙️ {isConfigOpen ? 'Fechar Config' : 'Configurar Stream'}
                     </button>
@@ -323,7 +323,7 @@ export default function DroneDashboard() {
             </header>
 
             {/* Formulário de Configuração (Abre/Fecha) */}
-            <ConfigForm />
+            {isConfigOpen && <ConfigForm />}
 
 
             {/* Área de Vídeo */}
@@ -362,16 +362,16 @@ const styles: { [key: string]: React.CSSProperties } = {
         backgroundColor: '#111',
         color: '#fff',
         fontFamily: 'Inter, sans-serif',
-        padding: '20px',
+        padding: '10px', // Reduzido para celular
     },
     loginBox: {
-        padding: '2rem',
+        padding: '1.5rem', // Reduzido para celular
         backgroundColor: '#222',
         borderRadius: '12px',
         border: '1px solid #333',
         textAlign: 'center' as const,
-        width: '100%',
-        maxWidth: '400px',
+        width: '90%', // Usa 90% da largura da tela
+        maxWidth: '400px', // Limite máximo para desktop
         boxShadow: '0 4px 20px rgba(0, 0, 0, 0.6)',
     },
     form: { display: 'flex', flexDirection: 'column', gap: '1rem' },
@@ -392,6 +392,7 @@ const styles: { [key: string]: React.CSSProperties } = {
         backgroundColor: '#333',
         color: '#fff',
         fontSize: '0.9rem',
+        minWidth: '100px', // Garante que não colapse
     },
     buttonPrimary: {
         padding: '12px',
@@ -404,24 +405,27 @@ const styles: { [key: string]: React.CSSProperties } = {
         transition: 'background-color 0.2s, transform 0.1s',
         marginTop: '0.5rem',
         boxShadow: '0 4px 6px rgba(0, 112, 243, 0.3)',
+        minHeight: '44px', // Touch target size
     },
     buttonSecondary: {
-        padding: '8px 16px',
+        padding: '8px 12px', // Ajustado
         backgroundColor: '#333',
         color: 'white',
         border: '1px solid #555',
         borderRadius: '6px',
         cursor: 'pointer',
         transition: 'background-color 0.2s, border-color 0.2s',
+        minHeight: '40px', // Touch target size
     },
     buttonDanger: {
-        padding: '8px 16px',
+        padding: '8px 12px', // Ajustado
         backgroundColor: '#e00',
         color: 'white',
         border: 'none',
         borderRadius: '6px',
         cursor: 'pointer',
         transition: 'background-color 0.2s',
+        minHeight: '40px', // Touch target size
     },
     copyButton: {
         padding: '10px 15px',
@@ -431,9 +435,10 @@ const styles: { [key: string]: React.CSSProperties } = {
         borderRadius: '0 6px 6px 0',
         cursor: 'pointer',
         fontWeight: 'bold',
-        fontSize: '0.9rem',
+        fontSize: '0.8rem', // Reduzido ligeiramente
         transition: 'background-color 0.2s',
         whiteSpace: 'nowrap' as const,
+        minHeight: '40px', // Touch target size
     },
     dashboardContainer: {
         minHeight: '100vh',
@@ -444,16 +449,25 @@ const styles: { [key: string]: React.CSSProperties } = {
         flexDirection: 'column',
     },
     header: {
-        padding: '1rem 2rem',
+        padding: '1rem', // Reduzido para mobile
         backgroundColor: '#1a1a1a',
         borderBottom: '1px solid #333',
         display: 'flex',
+        flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        flexWrap: 'wrap' as const, // Permite quebrar linha em ecrãs pequenos
+        gap: '10px', // Espaçamento entre os elementos
+    },
+    headerControls: {
+        display: 'flex',
+        gap: '8px',
+        flexWrap: 'wrap' as const,
+        justifyContent: 'flex-end',
     },
     mainContent: {
         flex: 1,
-        padding: '20px',
+        padding: '10px', // Reduzido para mobile
         display: 'flex',
         justifyContent: 'center',
     },
@@ -464,8 +478,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     },
     gridContainer: {
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-        gap: '1.5rem',
+        // O minmax foi ajustado para permitir mais flexibilidade em ecrãs menores
+        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
+        gap: '10px', // Reduzido para mobile
         width: '100%',
     },
     videoCard: {
@@ -476,16 +491,16 @@ const styles: { [key: string]: React.CSSProperties } = {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        minHeight: '300px',
+        minHeight: '200px', // Min altura menor para mobile
         boxShadow: '0 0 10px rgba(0, 0, 0, 0.5)',
     },
     videoHeader: {
-        padding: '0.75rem 1rem',
+        padding: '0.5rem 0.75rem', // Reduzido
         backgroundColor: '#111',
         borderBottom: '1px solid #222',
         display: 'flex',
         alignItems: 'center',
-        fontSize: '1rem',
+        fontSize: '0.9rem', // Reduzido
         fontWeight: 'bold',
     },
     statusDotActive: {
@@ -520,7 +535,7 @@ const styles: { [key: string]: React.CSSProperties } = {
         borderRadius: '0 6px 0 0',
     },
     configContainer: {
-        width: '100%',
+        width: '90%', // Usa 90% para mobile
         maxWidth: '1000px',
         margin: '1rem auto 0',
         backgroundColor: '#1c1c1c',
@@ -530,7 +545,7 @@ const styles: { [key: string]: React.CSSProperties } = {
         boxShadow: '0 4px 15px rgba(0, 0, 0, 0.4)',
     },
     configHeader: {
-        padding: '1rem',
+        padding: '0.8rem', // Reduzido
         backgroundColor: '#282828',
         cursor: 'pointer',
         borderBottom: '1px solid #444',
@@ -540,7 +555,7 @@ const styles: { [key: string]: React.CSSProperties } = {
         borderRadius: '10px 10px 0 0',
     },
     configForm: {
-        padding: '1.5rem',
+        padding: '1rem', // Reduzido
         display: 'flex',
         flexDirection: 'column',
         gap: '10px',
@@ -552,7 +567,7 @@ const styles: { [key: string]: React.CSSProperties } = {
         fontSize: '0.9rem',
     },
     helpText: {
-        fontSize: '0.75rem',
+        fontSize: '0.7rem', // Reduzido
         color: '#aaa',
         marginBottom: '10px',
     },
@@ -573,20 +588,27 @@ const styles: { [key: string]: React.CSSProperties } = {
         borderRight: 'none',
         display: 'flex',
         alignItems: 'center',
-        fontSize: '0.9rem',
+        fontSize: '0.8rem', // Reduzido
     },
     rtmpInstructions: {
-        padding: '15px',
+        padding: '10px', // Reduzido
         backgroundColor: '#002244',
         border: '1px solid #0070f3',
         borderRadius: '6px',
-        marginBottom: '20px',
+        marginBottom: '10px', // Reduzido
     },
     securityWarning: {
-        padding: '15px',
+        padding: '10px', // Reduzido
         backgroundColor: '#330000',
         border: '1px solid #ff4444',
         borderRadius: '6px',
-        marginTop: '20px',
+        marginTop: '10px', // Reduzido
     },
+    buttonGroup: {
+        display: 'flex',
+        justifyContent: 'flex-end',
+        gap: '8px', // Reduzido
+        marginTop: '10px',
+        flexWrap: 'wrap' as const, // Para garantir que os botões se quebrem em telas pequenas
+    }
 };
