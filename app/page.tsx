@@ -29,6 +29,7 @@ interface StoredUser {
 }
 
 // Declaramos a interface para o componente web, pois o TypeScript não o reconhece nativamente.
+// (Esta declaração é boa prática, mas a instrução @ts-ignore é mais robusta no nosso ambiente de ficheiro único)
 declare global {
     namespace JSX {
         interface IntrinsicElements {
@@ -72,7 +73,6 @@ const CopyButton: React.FC<{ textToCopy: string, label: string }> = ({ textToCop
             tempInput.select();
             // Usando execCommand para máxima compatibilidade em iframes
             document.execCommand('copy'); 
-            document.body.removeChild(tempInput);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         } catch (err) {
@@ -101,6 +101,7 @@ const DroneStreamPlayer: React.FC<{ playbackId: string, droneName: string }> = (
             </div>
             
             {/* O Mux Web Component lida com a reprodução HLS e erros (como 404) automaticamente. */}
+            {/* @ts-ignore: O componente web mux-player não é reconhecido nativamente pelo JSX/TypeScript sem um ficheiro .d.ts dedicado. */}
             <mux-player
                 playback-id={playbackId}
                 stream-type="live" // Define como Live Stream
