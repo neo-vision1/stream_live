@@ -19,7 +19,7 @@ const CONFIGURABLE_DRONES = [
     { id: 2, name: 'Drone Bravo (Secundário)', configKey: 'drone2' as const },
 ];
 
-// Simulação de feeds de drones adicionais que espelham o Drone 2
+// Drones adicionais que foram removidos do display 'multi' conforme o seu pedido.
 const ADDITIONAL_DRONES = [
     { id: 3, name: 'Drone Charlie (Monitoramento)' },
     { id: 4, name: 'Drone Delta (Reserva)' },
@@ -208,14 +208,14 @@ export default function DroneDashboard() {
     };
 
 
-    // Mapeia todos os feeds ativos para o Playback ID correto
-    const activeFeeds = useMemo(() => {
+    // Mapeia todos os feeds ativos, incluindo os configuráveis (1 e 2) e os adicionais (3 e 4)
+    const allFeeds = useMemo(() => {
         return [
             CONFIGURABLE_DRONES[0], // Drone Alpha (Configuração 1)
             CONFIGURABLE_DRONES[1], // Drone Bravo (Configuração 2)
-            ...ADDITIONAL_DRONES // Outros drones espelham a configuração do Drone 2
+            ...ADDITIONAL_DRONES // Outros drones que usavam a configuração do Drone 2
         ].map(drone => {
-            let playbackId = config.drone2.playbackId; // Padrão
+            let playbackId = config.drone2.playbackId; // Padrão para 3 e 4
             let isConfigurable = false;
 
             if (drone.id === 1) {
@@ -225,8 +225,8 @@ export default function DroneDashboard() {
                 playbackId = config.drone2.playbackId;
                 isConfigurable = true;
             } else {
-                // Drones 3 e 4 (Charlie e Delta) usam a config do Drone 2
-                playbackId = config.drone2.playbackId;
+                // Drones 3 e 4 (Charlie e Delta) continuam usando a config do Drone 2 no back-end
+                playbackId = config.drone2.playbackId; 
             }
 
             return {
@@ -241,8 +241,8 @@ export default function DroneDashboard() {
 
     // Define quais feeds serão exibidos com base no viewMode
     const feedsToDisplay = useMemo(() => {
-        const alphaDrone = activeFeeds.find(d => d.id === 1);
-        const bravoDrone = activeFeeds.find(d => d.id === 2);
+        const alphaDrone = allFeeds.find(d => d.id === 1);
+        const bravoDrone = allFeeds.find(d => d.id === 2);
         
         switch (viewMode) {
             case 'alpha':
@@ -250,11 +250,12 @@ export default function DroneDashboard() {
             case 'bravo':
                 return bravoDrone ? [bravoDrone] : [];
             case 'multi':
-                return activeFeeds; // Todos os 4 drones
+                // **Ajuste solicitado:** Retorna apenas o Alpha (id: 1) e o Bravo (id: 2)
+                return allFeeds.filter(d => d.id === 1 || d.id === 2);
             default:
                 return alphaDrone ? [alphaDrone] : [];
         }
-    }, [viewMode, activeFeeds]);
+    }, [viewMode, allFeeds]);
 
     // --- RENDERIZAÇÃO: TELA DE CONFIGURAÇÃO (Sub-formulário para um Drone) ---
     const DroneConfigForm: React.FC<{ drone: typeof CONFIGURABLE_DRONES[0] }> = React.memo(({ drone }) => {
@@ -403,7 +404,7 @@ export default function DroneDashboard() {
                     <button 
                         onClick={() => setViewMode('multi')} 
                         style={viewMode === 'multi' ? styles.buttonActive : styles.buttonSecondary}
-                        title="Visualizar todos os drones simultaneamente (Ambos)"
+                        title="Visualizar Drone Alpha e Bravo simultaneamente"
                     >
                         Ambos (Grid)
                     </button>
@@ -607,6 +608,7 @@ const styles: { [key: string]: React.CSSProperties } = {
         flexDirection: 'column',
     },
     gridContainer: {
+        // Garantindo que, se forem apenas 2, eles fiquem lado a lado de forma responsiva
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
         gap: '10px',
