@@ -1,35 +1,49 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 // IMPORTANTE: A linha 'import MuxPlayer from "@mux/mux-player-react";' não é suportada 
 // neste ambiente de ficheiro único React. Em vez disso, usamos o Mux Player Web Component (<mux-player>), 
 // que é carregado dinamicamente no <head> para fornecer a mesma funcionalidade.
 
 // --- CONFIGURAÇÕES E DADOS DE TESTE ---
-// Playback ID de teste padrão (VOD Mux de demonstração)
-const DEFAULT_PLAYBACK_ID = 'W72UFolv01VI00hiyh004TLbxVO300Osr300901Kp84HXGfBE'; 
-const DEFAULT_RTMP_KEY = '8e2849be-3829-8a6b-2bc4-bce86a83bf62';
+// IDs de teste padrão (VOD Mux de demonstração)
+const DEFAULT_PLAYBACK_ID_1 = 'kP5C71e800M2H35Hn7l77457Xy44600102Ld0234'; 
+const DEFAULT_RTMP_KEY_1 = '8e2849be-3829-8a6b-2bc4-bce86a83bf62'; // Test key 1
+const DEFAULT_PLAYBACK_ID_2 = 'kP5C71e800M2H35Hn7l77457Xy44600102Ld0235'; // Mock different ID
+const DEFAULT_RTMP_KEY_2 = '8e2849be-3829-8a6b-2bc4-bce86a83bf63'; // Test key 2
 const RTMP_BASE_URL = 'rtmp://global-live.mux.com:5222/app/';
 
-// Simulação de feeds de drones secundários.
-const SECONDARY_DRONES = [
-    { id: 2, name: 'Drone Bravo (Secundário)' },
+// Definição dos drones configuráveis
+const CONFIGURABLE_DRONES = [
+    { id: 1, name: 'Drone Alpha (Principal)', configKey: 'drone1' as const },
+    { id: 2, name: 'Drone Bravo (Secundário)', configKey: 'drone2' as const },
+];
+
+// Simulação de feeds de drones adicionais que espelham o Drone 2
+const ADDITIONAL_DRONES = [
     { id: 3, name: 'Drone Charlie (Monitoramento)' },
     { id: 4, name: 'Drone Delta (Reserva)' },
 ];
 
 // Tipagem para configuração e utilizadores
-interface DroneConfig {
+interface SingleDroneConfig {
     playbackId: string;
     rtmpKey: string;
 }
+
+interface AllConfigs {
+    drone1: SingleDroneConfig;
+    drone2: SingleDroneConfig;
+}
+
 interface StoredUser {
     name: string;
     id: string;
 }
 
-// Declaramos a interface para o componente web, pois o TypeScript não o reconhece nativamente.
-// (Esta declaração é boa prática, mas a instrução @ts-ignore é mais robusta no nosso ambiente de ficheiro único)
+type ViewMode = 'alpha' | 'bravo' | 'multi';
+
+// Declaramos a interface para o componente web (para evitar erros TS)
 declare global {
     namespace JSX {
         interface IntrinsicElements {
@@ -58,11 +72,29 @@ const loadUser = (): StoredUser | null => {
         return null;
     }
 };
+const saveConfig = (config: AllConfigs) => {
+    localStorage.setItem('droneConfigs', JSON.stringify(config));
+};
+const loadConfig = (): AllConfigs => {
+    try {
+        const savedConfig = localStorage.getItem('droneConfigs');
+        if (savedConfig) {
+            return JSON.parse(savedConfig) as AllConfigs;
+        }
+    } catch (e) {
+        console.error("Erro ao carregar configuração:", e);
+    }
+    // Retorna a configuração padrão se falhar
+    return {
+        drone1: { playbackId: DEFAULT_PLAYBACK_ID_1, rtmpKey: DEFAULT_RTMP_KEY_1 },
+        drone2: { playbackId: DEFAULT_PLAYBACK_ID_2, rtmpKey: DEFAULT_RTMP_KEY_2 },
+    };
+};
 
 // --- COMPONENTES AUXILIARES ---
 
 // Componente para copiar texto para a área de transferência
-const CopyButton: React.FC<{ textToCopy: string, label: string }> = ({ textToCopy, label }) => {
+const CopyButton: React.FC<{ textToCopy: string, label: string }> = React.memo(({ textToCopy, label }) => {
     const [copied, setCopied] = useState(false);
 
     const handleCopy = () => {
@@ -71,7 +103,6 @@ const CopyButton: React.FC<{ textToCopy: string, label: string }> = ({ textToCop
             tempInput.value = textToCopy;
             document.body.appendChild(tempInput);
             tempInput.select();
-            // Usando execCommand para máxima compatibilidade em iframes
             document.execCommand('copy'); 
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
@@ -89,22 +120,21 @@ const CopyButton: React.FC<{ textToCopy: string, label: string }> = ({ textToCop
             {copied ? '✅ Copiado!' : `📋 Copiar ${label}`}
         </button>
     );
-};
+});
+CopyButton.displayName = 'CopyButton';
 
 // Componente Player simplificado usando o Mux Web Component
-const DroneStreamPlayer: React.FC<{ playbackId: string, droneName: string }> = ({ playbackId }) => {
-    // Usamos a tag <mux-player> diretamente.
+const DroneStreamPlayer: React.FC<{ playbackId: string, droneName: string }> = React.memo(({ playbackId }) => {
     return (
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
             <div style={styles.statusOverlay}>
-                Status: MuxPlayer pronto. (Playback ID: {playbackId})
+                Status: MuxPlayer pronto. (Playback ID: {playbackId.substring(0, 8)}...)
             </div>
             
-            {/* O Mux Web Component lida com a reprodução HLS e erros (como 404) automaticamente. */}
-            {/* @ts-ignore: O componente web mux-player não é reconhecido nativamente pelo JSX/TypeScript sem um ficheiro .d.ts dedicado. */}
+            {/* @ts-ignore: O componente web mux-player não é reconhecido nativamente pelo JSX/TypeScript */}
             <mux-player
                 playback-id={playbackId}
-                stream-type="live" // Define como Live Stream
+                stream-type="live" 
                 style={{ height: '100%', width: '100%', objectFit: 'cover' }}
                 controls
                 autoplay
@@ -112,41 +142,35 @@ const DroneStreamPlayer: React.FC<{ playbackId: string, droneName: string }> = (
             />
         </div>
     );
-};
+});
+DroneStreamPlayer.displayName = 'DroneStreamPlayer';
 
 
+// --- COMPONENTE PRINCIPAL ---
 export default function DroneDashboard() {
     // --- ESTADOS ---
     const [username, setUsername] = useState('');
     const [user, setUser] = useState<StoredUser | null>(null);
-    const [isMultiView, setIsMultiView] = useState(false);
+    const [viewMode, setViewMode] = useState<ViewMode>('alpha'); // Novo estado para controlar a visualização: 'alpha', 'bravo', 'multi'
     const [isConfigOpen, setIsConfigOpen] = useState(false);
-    const [config, setConfig] = useState<DroneConfig>({
-        playbackId: DEFAULT_PLAYBACK_ID,
-        rtmpKey: DEFAULT_RTMP_KEY,
-    });
+    const [config, setConfig] = useState<AllConfigs>(loadConfig());
+    const [expandedConfig, setExpandedConfig] = useState<string | null>('drone1'); // Controla qual drone config está aberto
 
-    // --- PERSISTÊNCIA & CARREGAMENTO DE SCRIPT (CARREGAR ESTADOS INICIAIS) ---
+    // --- PERSISTÊNCIA & CARREGAMENTO DE SCRIPT ---
     useEffect(() => {
         // 1. Carrega o Mux Player Web Component Script
-        // Isso permite o uso da tag <mux-player> no nosso JSX.
         if (typeof document !== 'undefined' && !document.querySelector('script[src*="mux-player"]')) {
             const script = document.createElement('script');
-            // Usamos a URL Unpkg para carregar o Web Component de forma independente.
             script.src = 'https://unpkg.com/@mux/mux-player';
             script.async = true;
             document.head.appendChild(script);
-            console.log("Mux Player Web Component script loaded.");
         }
 
         // 2. Carrega o utilizador da sessão anterior
         setUser(loadUser());
-
-        // 3. Carrega a configuração do drone (IDs)
-        const savedConfig = localStorage.getItem('droneConfig');
-        if (savedConfig) {
-            setConfig(JSON.parse(savedConfig));
-        }
+        
+        // 3. Carrega a configuração dos drones
+        setConfig(loadConfig());
     }, []);
 
     // --- FUNÇÕES DE AUTENTICAÇÃO E CONFIGURAÇÃO ---
@@ -154,7 +178,6 @@ export default function DroneDashboard() {
         e.preventDefault();
         if (!username.trim()) return;
 
-        // Gera um ID único simples e guarda a sessão
         const uniqueId = `user-${Math.floor(Math.random() * 10000)}`;
         const loggedUser = { name: username, id: uniqueId };
         setUser(loggedUser);
@@ -165,42 +188,106 @@ export default function DroneDashboard() {
         setUser(null);
         localStorage.removeItem('currentUser');
     };
-
-    const saveConfig = (e: React.FormEvent, newPlaybackId: string, newRtmpKey: string) => {
+    
+    // Função para salvar uma única configuração de drone
+    const handleSaveDroneConfig = (e: React.FormEvent, key: 'drone1' | 'drone2', tempPlaybackId: string, tempRtmpKey: string) => {
         e.preventDefault();
-        const newConfig = {
-            playbackId: newPlaybackId.trim(),
-            rtmpKey: newRtmpKey.trim(),
+        const newConfig: SingleDroneConfig = {
+            playbackId: tempPlaybackId.trim(),
+            rtmpKey: tempRtmpKey.trim(),
         };
-        setConfig(newConfig);
-        localStorage.setItem('droneConfig', JSON.stringify(newConfig));
-        setIsConfigOpen(false);
+        
+        setConfig(prev => {
+            const updatedConfig = { ...prev, [key]: newConfig };
+            saveConfig(updatedConfig);
+            return updatedConfig;
+        });
+        
+        // Fecha a seção de configuração após salvar
+        setExpandedConfig(null);
     };
 
-    const toggleView = () => setIsMultiView(!isMultiView);
 
-    // --- RENDERIZAÇÃO: TELA DE CONFIGURAÇÃO (Formulário) ---
-    const ConfigForm = () => {
-        const [tempPlaybackId, setTempPlaybackId] = useState(config.playbackId);
-        const [tempRtmpKey, setTempRtmpKey] = useState(config.rtmpKey);
+    // Mapeia todos os feeds ativos para o Playback ID correto
+    const activeFeeds = useMemo(() => {
+        return [
+            CONFIGURABLE_DRONES[0], // Drone Alpha (Configuração 1)
+            CONFIGURABLE_DRONES[1], // Drone Bravo (Configuração 2)
+            ...ADDITIONAL_DRONES // Outros drones espelham a configuração do Drone 2
+        ].map(drone => {
+            let playbackId = config.drone2.playbackId; // Padrão
+            let isConfigurable = false;
+
+            if (drone.id === 1) {
+                playbackId = config.drone1.playbackId;
+                isConfigurable = true;
+            } else if (drone.id === 2) {
+                playbackId = config.drone2.playbackId;
+                isConfigurable = true;
+            } else {
+                // Drones 3 e 4 (Charlie e Delta) usam a config do Drone 2
+                playbackId = config.drone2.playbackId;
+            }
+
+            return {
+                id: drone.id, 
+                name: drone.name, 
+                playbackId: playbackId,
+                isConfigurable: isConfigurable,
+            };
+        });
+    }, [config]);
+
+
+    // Define quais feeds serão exibidos com base no viewMode
+    const feedsToDisplay = useMemo(() => {
+        const alphaDrone = activeFeeds.find(d => d.id === 1);
+        const bravoDrone = activeFeeds.find(d => d.id === 2);
+        
+        switch (viewMode) {
+            case 'alpha':
+                return alphaDrone ? [alphaDrone] : [];
+            case 'bravo':
+                return bravoDrone ? [bravoDrone] : [];
+            case 'multi':
+                return activeFeeds; // Todos os 4 drones
+            default:
+                return alphaDrone ? [alphaDrone] : [];
+        }
+    }, [viewMode, activeFeeds]);
+
+    // --- RENDERIZAÇÃO: TELA DE CONFIGURAÇÃO (Sub-formulário para um Drone) ---
+    const DroneConfigForm: React.FC<{ drone: typeof CONFIGURABLE_DRONES[0] }> = React.memo(({ drone }) => {
+        // O TS exige a verificação de tipo ao acessar a chave dinâmica
+        const key = drone.configKey as keyof AllConfigs;
+        const currentConfig = config[key];
+        
+        const [tempPlaybackId, setTempPlaybackId] = useState(currentConfig.playbackId);
+        const [tempRtmpKey, setTempRtmpKey] = useState(currentConfig.rtmpKey);
+
+        // Atualiza os estados temporários se a configuração externa mudar
+        useEffect(() => {
+            setTempPlaybackId(currentConfig.playbackId);
+            setTempRtmpKey(currentConfig.rtmpKey);
+        }, [currentConfig.playbackId, currentConfig.rtmpKey]);
 
         const fullRtmpUrl = RTMP_BASE_URL + tempRtmpKey;
+        const isExpanded = expandedConfig === drone.configKey;
 
         return (
-            <div style={styles.configContainer}>
-                <div style={styles.configHeader} onClick={() => setIsConfigOpen(!isConfigOpen)}>
-                    <h3>
-                        {isConfigOpen ? '➖' : '➕'} Configuração do Drone Principal (ID 1)
-                    </h3>
+            <div style={styles.configAccordionItem}>
+                <div style={styles.configHeader} onClick={() => setExpandedConfig(isExpanded ? null : drone.configKey)}>
+                    <h4 style={{ margin: 0 }}>
+                        {isExpanded ? '➖' : '➕'} Configuração: {drone.name}
+                    </h4>
                 </div>
-                {isConfigOpen && (
-                    <form onSubmit={(e) => saveConfig(e, tempPlaybackId, tempRtmpKey)} style={styles.configForm}>
+                {isExpanded && (
+                    <form onSubmit={(e) => handleSaveDroneConfig(e, key, tempPlaybackId, tempRtmpKey)} style={styles.configForm}>
 
                         {/* --- Seção de Instruções de Transmissão RTMP --- */}
                         <div style={styles.rtmpInstructions}>
-                            <h4>🚀 Para Iniciar a Transmissão (Streaming):</h4>
-                            <p>1. O seu drone (ou software de codificação como OBS Studio) deve enviar o vídeo para o URL abaixo.</p>
-                            <p>2. **VERIFIQUE O MUX:** Confirme no seu painel Mux que a Live Stream está no estado **"Active"** (Ativa). O player só funcionará se o Mux estiver a receber o sinal RTMP.</p>
+                            <h5>🚀 Instruções de Streaming para {drone.name}:</h5>
+                            <p>Envie o vídeo usando a Chave de Stream abaixo.</p>
                         </div>
                         
                         {/* INPUT: CHAVE DE STREAM */}
@@ -210,7 +297,7 @@ export default function DroneDashboard() {
                                 type="text"
                                 value={tempRtmpKey}
                                 onChange={(e) => setTempRtmpKey(e.target.value)}
-                                placeholder="Cole a Stream Key aqui (Ex: sua_chave_de_stream_mux)"
+                                placeholder="Cole a Stream Key aqui"
                                 style={styles.inputRtmp}
                                 required
                             />
@@ -219,15 +306,15 @@ export default function DroneDashboard() {
                         <small style={styles.helpText}>Esta chave é usada para ENVIAR o vídeo para o Mux.</small>
 
                         {/* INPUT: URL RTMP COMPLETA */}
-                        <label style={styles.configLabel}>URL RTMP Completa para o Codificador:</label>
+                        <label style={styles.configLabel}>URL RTMP Completa:</label>
                         <div style={styles.rtmpInputGroup}>
                             <div style={styles.rtmpDisplay}>
                                 {fullRtmpUrl}
                             </div>
                             <CopyButton textToCopy={fullRtmpUrl} label="URL" />
                         </div>
-                        <small style={styles.helpText}>Para OBS Studio: Servidor RTMP é *{RTMP_BASE_URL}* e a Chave de Stream é a *chave acima*.</small>
-                        <hr style={{ border: 'none', borderBottom: '1px solid #333', margin: '15px 0' }} />
+                        
+                        <hr style={{ border: 'none', borderBottom: '1px dashed #333', margin: '15px 0' }} />
 
                         {/* INPUT: ID DE REPRODUÇÃO */}
                         <label style={styles.configLabel}>ID de Reprodução (Mux Playback ID):</label>
@@ -236,36 +323,27 @@ export default function DroneDashboard() {
                                 type="text"
                                 value={tempPlaybackId}
                                 onChange={(e) => setTempPlaybackId(e.target.value)}
-                                placeholder="Cole o Playback ID aqui (Ex: ce55dde1...)"
+                                placeholder="Cole o Playback ID aqui"
                                 style={styles.inputRtmp}
                                 required
                             />
                             <CopyButton textToCopy={tempPlaybackId} label="ID" />
                         </div>
                         <small style={styles.helpText}>
-                            **AVISO:** O ID de Reprodução padrão é um vídeo de teste. Para ver o seu stream ao vivo,
-                            deve substituí-lo pelo Playback ID do seu Live Stream Mux **ativo**.
+                            Este ID é usado para RECEBER e reproduzir o vídeo.
                         </small>
 
-                        <div style={styles.securityWarning}>
-                            <h4>Player Ativo</h4>
-                            <p>Estamos a usar o Mux Player Web Component, que oferece uma reprodução HLS robusta. O problema 404 será resolvido assim que o Playback ID corresponder a um stream ativo no Mux.</p>
-                        </div>
-
                         <div style={styles.buttonGroup}>
-                            <button type="button" onClick={() => setIsConfigOpen(false)} style={styles.buttonSecondary}>
-                                Cancelar
-                            </button>
                             <button type="submit" style={styles.buttonPrimary}>
-                                Salvar Configuração
+                                Salvar {drone.name}
                             </button>
                         </div>
                     </form>
                 )}
             </div>
         );
-    };
-
+    });
+    DroneConfigForm.displayName = 'DroneConfigForm';
 
     // --- RENDERIZAÇÃO: TELA DE LOGIN ---
     if (!user) {
@@ -293,11 +371,7 @@ export default function DroneDashboard() {
     }
 
     // --- RENDERIZAÇÃO: DASHBOARD DO DRONE ---
-    // Os feeds secundários usam o mesmo Playback ID do feed principal
-    const activeFeeds = [
-        { id: 1, name: 'Drone Alpha (Principal)', playbackId: config.playbackId },
-        ...SECONDARY_DRONES.map(drone => ({ ...drone, playbackId: config.playbackId }))
-    ];
+    
 
     return (
         <div style={styles.dashboardContainer}>
@@ -310,41 +384,88 @@ export default function DroneDashboard() {
                     </small>
                 </div>
                 <div style={styles.headerControls}>
+                    
+                    {/* Botões de Visualização */}
+                    <button 
+                        onClick={() => setViewMode('alpha')} 
+                        style={viewMode === 'alpha' ? styles.buttonActive : styles.buttonSecondary}
+                        title="Visualizar apenas o Drone Alpha (Principal)"
+                    >
+                        Drone 1 (Alpha)
+                    </button>
+                    <button 
+                        onClick={() => setViewMode('bravo')} 
+                        style={viewMode === 'bravo' ? styles.buttonActive : styles.buttonSecondary}
+                        title="Visualizar apenas o Drone Bravo (Secundário)"
+                    >
+                        Drone 2 (Bravo)
+                    </button>
+                    <button 
+                        onClick={() => setViewMode('multi')} 
+                        style={viewMode === 'multi' ? styles.buttonActive : styles.buttonSecondary}
+                        title="Visualizar todos os drones simultaneamente (Ambos)"
+                    >
+                        Ambos (Grid)
+                    </button>
+
+                    {/* Botão de Configuração */}
                     <button onClick={() => setIsConfigOpen(!isConfigOpen)} style={styles.buttonSecondary}>
-                        ⚙️ {isConfigOpen ? 'Fechar Config' : 'Configurar Stream'}
+                        ⚙️ {isConfigOpen ? 'Fechar Config' : 'Configurar Streams'}
                     </button>
-                    <button onClick={toggleView} style={styles.buttonSecondary}>
-                        {isMultiView ? '👁️ Ver Único' : '🎥 Ver Múltiplos (Grid)'}
-                    </button>
+
+                    {/* Botão de Sair */}
                     <button onClick={handleLogout} style={styles.buttonDanger}>
                         Sair
                     </button>
                 </div>
             </header>
 
-            {/* Formulário de Configuração (Abre/Fecha) */}
-            {isConfigOpen && <ConfigForm />}
+            {/* Área de Configuração */}
+            {isConfigOpen && (
+                 <div style={styles.configContainer}>
+                    <h3 style={styles.configTitle}>Configuração de Feeds de Transmissão</h3>
+                    <p style={{...styles.helpText, padding: '0 1rem', margin: 0}}>Defina as chaves e IDs de reprodução para os drones Alpha e Bravo separadamente.</p>
+                    
+                    <div style={styles.configAccordion}>
+                        {CONFIGURABLE_DRONES.map(drone => (
+                            <DroneConfigForm key={drone.id} drone={drone} />
+                        ))}
+                    </div>
+                    <div style={{...styles.buttonGroup, padding: '1rem', justifyContent: 'flex-start'}}>
+                        <button onClick={() => setIsConfigOpen(false)} style={styles.buttonSecondary}>
+                            Fechar Painel de Configuração
+                        </button>
+                    </div>
+                </div>
+            )}
 
 
             {/* Área de Vídeo */}
             <main style={styles.mainContent}>
-                <div style={isMultiView ? styles.gridContainer : styles.singleContainer}>
+                <div style={viewMode === 'multi' ? styles.gridContainer : styles.singleContainer}>
 
-                    {(isMultiView ? activeFeeds : [activeFeeds[0]]).map((drone) => (
-                        <div key={drone.id} style={styles.videoCard}>
-                            <div style={styles.videoHeader}>
-                                {/* O statusDot usa uma cor simples para o drone principal (ID 1) */}
-                                <span style={drone.id === 1 ? styles.statusDotActive : styles.statusDotInactive}></span>
-                                {drone.name}
+                    {feedsToDisplay.length > 0 ? (
+                        feedsToDisplay.map((drone) => (
+                            <div key={drone.id} style={styles.videoCard}>
+                                <div style={styles.videoHeader}>
+                                    {/* O statusDot usa uma cor simples para os drones configuráveis (1 e 2) */}
+                                    <span style={drone.isConfigurable ? styles.statusDotActive : styles.statusDotInactive}></span>
+                                    {drone.name}
+                                </div>
+                                <div style={styles.playerWrapper}>
+                                    <DroneStreamPlayer
+                                        playbackId={drone.playbackId}
+                                        droneName={drone.name}
+                                    />
+                                </div>
                             </div>
-                            <div style={styles.playerWrapper}>
-                                <DroneStreamPlayer
-                                    playbackId={drone.playbackId}
-                                    droneName={drone.name}
-                                />
-                            </div>
+                        ))
+                    ) : (
+                        <div style={styles.noFeedsMessage}>
+                            <p>Nenhum drone selecionado para esta visualização.</p>
+                            <p>Selecione um drone ou a opção "Ambos" no menu superior.</p>
                         </div>
-                    ))}
+                    )}
 
                 </div>
             </main>
@@ -354,6 +475,7 @@ export default function DroneDashboard() {
 
 // --- ESTILOS (CSS-in-JS) ---
 const styles: { [key: string]: React.CSSProperties } = {
+    // Estilos de Login
     loginContainer: {
         height: '100vh',
         display: 'flex',
@@ -362,16 +484,16 @@ const styles: { [key: string]: React.CSSProperties } = {
         backgroundColor: '#111',
         color: '#fff',
         fontFamily: 'Inter, sans-serif',
-        padding: '10px', // Reduzido para celular
+        padding: '10px',
     },
     loginBox: {
-        padding: '1.5rem', // Reduzido para celular
+        padding: '1.5rem',
         backgroundColor: '#222',
         borderRadius: '12px',
         border: '1px solid #333',
         textAlign: 'center' as const,
-        width: '90%', // Usa 90% da largura da tela
-        maxWidth: '400px', // Limite máximo para desktop
+        width: '90%',
+        maxWidth: '400px',
         boxShadow: '0 4px 20px rgba(0, 0, 0, 0.6)',
     },
     form: { display: 'flex', flexDirection: 'column', gap: '1rem' },
@@ -384,16 +506,8 @@ const styles: { [key: string]: React.CSSProperties } = {
         fontSize: '1rem',
         boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.2)',
     },
-    inputRtmp: {
-        flex: 1,
-        padding: '10px',
-        borderRadius: '6px 0 0 6px',
-        border: '1px solid #444',
-        backgroundColor: '#333',
-        color: '#fff',
-        fontSize: '0.9rem',
-        minWidth: '100px', // Garante que não colapse
-    },
+    
+    // Estilos de Botões e Inputs
     buttonPrimary: {
         padding: '12px',
         backgroundColor: '#0070f3',
@@ -405,27 +519,38 @@ const styles: { [key: string]: React.CSSProperties } = {
         transition: 'background-color 0.2s, transform 0.1s',
         marginTop: '0.5rem',
         boxShadow: '0 4px 6px rgba(0, 112, 243, 0.3)',
-        minHeight: '44px', // Touch target size
+        minHeight: '44px',
     },
     buttonSecondary: {
-        padding: '8px 12px', // Ajustado
+        padding: '8px 12px',
         backgroundColor: '#333',
         color: 'white',
         border: '1px solid #555',
         borderRadius: '6px',
         cursor: 'pointer',
         transition: 'background-color 0.2s, border-color 0.2s',
-        minHeight: '40px', // Touch target size
+        minHeight: '40px',
+    },
+    buttonActive: {
+        padding: '8px 12px',
+        backgroundColor: '#0070f3',
+        color: 'white',
+        border: '1px solid #0050c3',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        fontWeight: 'bold',
+        minHeight: '40px',
+        boxShadow: '0 0 8px rgba(0, 112, 243, 0.5)',
     },
     buttonDanger: {
-        padding: '8px 12px', // Ajustado
+        padding: '8px 12px',
         backgroundColor: '#e00',
         color: 'white',
         border: 'none',
         borderRadius: '6px',
         cursor: 'pointer',
         transition: 'background-color 0.2s',
-        minHeight: '40px', // Touch target size
+        minHeight: '40px',
     },
     copyButton: {
         padding: '10px 15px',
@@ -435,11 +560,13 @@ const styles: { [key: string]: React.CSSProperties } = {
         borderRadius: '0 6px 6px 0',
         cursor: 'pointer',
         fontWeight: 'bold',
-        fontSize: '0.8rem', // Reduzido ligeiramente
+        fontSize: '0.8rem',
         transition: 'background-color 0.2s',
         whiteSpace: 'nowrap' as const,
-        minHeight: '40px', // Touch target size
+        minHeight: '40px',
     },
+    
+    // Estilos do Dashboard e Layout (Responsivos)
     dashboardContainer: {
         minHeight: '100vh',
         backgroundColor: '#0a0a0a',
@@ -449,15 +576,15 @@ const styles: { [key: string]: React.CSSProperties } = {
         flexDirection: 'column',
     },
     header: {
-        padding: '1rem', // Reduzido para mobile
+        padding: '1rem',
         backgroundColor: '#1a1a1a',
         borderBottom: '1px solid #333',
         display: 'flex',
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        flexWrap: 'wrap' as const, // Permite quebrar linha em ecrãs pequenos
-        gap: '10px', // Espaçamento entre os elementos
+        flexWrap: 'wrap' as const,
+        gap: '10px',
     },
     headerControls: {
         display: 'flex',
@@ -467,21 +594,24 @@ const styles: { [key: string]: React.CSSProperties } = {
     },
     mainContent: {
         flex: 1,
-        padding: '10px', // Reduzido para mobile
+        padding: '10px',
         display: 'flex',
         justifyContent: 'center',
+        overflowY: 'auto',
     },
     singleContainer: {
         width: '100%',
         maxWidth: '1000px',
-        height: '60vh', // Altura relativa para melhor adaptação
+        height: '80vh', // Aumentado para melhor visualização única
+        display: 'flex',
+        flexDirection: 'column',
     },
     gridContainer: {
         display: 'grid',
-        // O minmax foi ajustado para permitir mais flexibilidade em ecrãs menores
         gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
-        gap: '10px', // Reduzido para mobile
+        gap: '10px',
         width: '100%',
+        minHeight: '80vh',
     },
     videoCard: {
         backgroundColor: '#000',
@@ -491,16 +621,16 @@ const styles: { [key: string]: React.CSSProperties } = {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        minHeight: '200px', // Min altura menor para mobile
+        minHeight: '200px',
         boxShadow: '0 0 10px rgba(0, 0, 0, 0.5)',
     },
     videoHeader: {
-        padding: '0.5rem 0.75rem', // Reduzido
+        padding: '0.5rem 0.75rem',
         backgroundColor: '#111',
         borderBottom: '1px solid #222',
         display: 'flex',
         alignItems: 'center',
-        fontSize: '0.9rem', // Reduzido
+        fontSize: '0.9rem',
         fontWeight: 'bold',
     },
     statusDotActive: {
@@ -524,56 +654,90 @@ const styles: { [key: string]: React.CSSProperties } = {
         flex: 1,
         position: 'relative',
     },
-    errorBanner: {
-        position: 'absolute' as const, top: 0, left: 0, right: 0, zIndex: 10,
-        backgroundColor: 'rgba(255,0,0,0.8)', color: 'white', padding: '10px', fontSize: '12px',
-        textAlign: 'center' as const,
-    },
     statusOverlay: {
         position: 'absolute' as const, bottom: 0, left: 0, zIndex: 10,
         backgroundColor: 'rgba(0,0,0,0.6)', color: '#0f0', padding: '4px 10px', fontSize: '10px',
         borderRadius: '0 6px 0 0',
     },
+    noFeedsMessage: {
+        padding: '2rem',
+        textAlign: 'center' as const,
+        backgroundColor: '#1c1c1c',
+        borderRadius: '10px',
+        border: '1px solid #444',
+        margin: 'auto',
+        maxWidth: '400px',
+        height: 'fit-content',
+    },
+    
+    // Estilos de Configuração
     configContainer: {
-        width: '90%', // Usa 90% para mobile
+        width: '90%',
         maxWidth: '1000px',
         margin: '1rem auto 0',
         backgroundColor: '#1c1c1c',
         borderRadius: '10px',
         border: '1px solid #444',
-        overflow: 'hidden',
         boxShadow: '0 4px 15px rgba(0, 0, 0, 0.4)',
+        padding: '1rem 0', 
+    },
+    configTitle: {
+        margin: '0 1rem 0.5rem',
+        paddingBottom: '0.5rem',
+        borderBottom: '1px solid #333',
+    },
+    configAccordion: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+        padding: '0 1rem',
+    },
+    configAccordionItem: {
+        border: '1px solid #333',
+        borderRadius: '8px',
+        overflow: 'hidden',
     },
     configHeader: {
-        padding: '0.8rem', // Reduzido
+        padding: '0.8rem',
         backgroundColor: '#282828',
         cursor: 'pointer',
         borderBottom: '1px solid #444',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        borderRadius: '10px 10px 0 0',
+        transition: 'background-color 0.2s',
     },
     configForm: {
-        padding: '1rem', // Reduzido
+        padding: '1rem',
         display: 'flex',
         flexDirection: 'column',
         gap: '10px',
+        borderTop: '1px solid #333',
+        backgroundColor: '#222',
     },
     configLabel: {
-        marginTop: '10px',
+        marginTop: '5px',
         fontWeight: 'bold',
         color: '#ddd',
         fontSize: '0.9rem',
     },
     helpText: {
-        fontSize: '0.7rem', // Reduzido
+        fontSize: '0.7rem',
         color: '#aaa',
-        marginBottom: '10px',
     },
     rtmpInputGroup: {
         display: 'flex',
         width: '100%',
+    },
+    inputRtmp: {
+        flex: 1,
+        padding: '10px',
+        borderRadius: '6px 0 0 6px',
+        border: '1px solid #444',
+        backgroundColor: '#333',
+        color: '#fff',
+        fontSize: '0.9rem',
+        minWidth: '100px',
     },
     rtmpDisplay: {
         flex: 1,
@@ -588,27 +752,20 @@ const styles: { [key: string]: React.CSSProperties } = {
         borderRight: 'none',
         display: 'flex',
         alignItems: 'center',
-        fontSize: '0.8rem', // Reduzido
+        fontSize: '0.8rem',
     },
     rtmpInstructions: {
-        padding: '10px', // Reduzido
+        padding: '10px',
         backgroundColor: '#002244',
         border: '1px solid #0070f3',
         borderRadius: '6px',
-        marginBottom: '10px', // Reduzido
-    },
-    securityWarning: {
-        padding: '10px', // Reduzido
-        backgroundColor: '#330000',
-        border: '1px solid #ff4444',
-        borderRadius: '6px',
-        marginTop: '10px', // Reduzido
+        marginBottom: '10px',
     },
     buttonGroup: {
         display: 'flex',
         justifyContent: 'flex-end',
-        gap: '8px', // Reduzido
+        gap: '8px',
         marginTop: '10px',
-        flexWrap: 'wrap' as const, // Para garantir que os botões se quebrem em telas pequenas
+        flexWrap: 'wrap' as const,
     }
 };
