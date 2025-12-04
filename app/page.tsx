@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 // --- CONFIGURAÇÕES E DADOS DE TESTE ---
 // Playback ID de teste padrão (você deve substituir este pelo seu ID real)
 const DEFAULT_PLAYBACK_ID = 'W72UFolv01VI00hiyh004TLbxVO300Osr300901Kp84HXGfBE'; 
-const DEFAULT_RTMP_KEY = 'sua_chave_de_stream_mux';
+const DEFAULT_RTMP_KEY = '8e2849be-3829-8a6b-2bc4-bce86a83bf62';
 const RTMP_BASE_URL = 'rtmp://global-live.mux.com:5222/app/';
 
 // Simulação de feeds de drones secundários.
