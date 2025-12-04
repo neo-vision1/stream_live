@@ -1,4 +1,4 @@
-"use client neo";
+"use client";
 
 import React, { useState, useEffect } from 'react';
 // IMPORTANTE: A linha 'import MuxPlayer from "@mux/mux-player-react";' não é suportada 
@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 // que é carregado dinamicamente no <head> para fornecer a mesma funcionalidade.
 
 // --- CONFIGURAÇÕES E DADOS DE TESTE ---
-// Playback ID de teste padrão (você deve substituir este pelo seu ID real)
+// Playback ID de teste padrão (VOD Mux de demonstração)
 const DEFAULT_PLAYBACK_ID = 'W72UFolv01VI00hiyh004TLbxVO300Osr300901Kp84HXGfBE'; 
 const DEFAULT_RTMP_KEY = '8e2849be-3829-8a6b-2bc4-bce86a83bf62';
 const RTMP_BASE_URL = 'rtmp://global-live.mux.com:5222/app/';
@@ -70,7 +70,8 @@ const CopyButton: React.FC<{ textToCopy: string, label: string }> = ({ textToCop
             tempInput.value = textToCopy;
             document.body.appendChild(tempInput);
             tempInput.select();
-            document.execCommand('copy');
+            // Usando execCommand para máxima compatibilidade em iframes
+            document.execCommand('copy'); 
             document.body.removeChild(tempInput);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
@@ -96,7 +97,7 @@ const DroneStreamPlayer: React.FC<{ playbackId: string, droneName: string }> = (
     return (
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
             <div style={styles.statusOverlay}>
-                Status: MuxPlayer pronto. (Aguardando stream...)
+                Status: MuxPlayer pronto. (Playback ID: {playbackId})
             </div>
             
             {/* O Mux Web Component lida com a reprodução HLS e erros (como 404) automaticamente. */}
@@ -247,7 +248,7 @@ export default function DroneDashboard() {
 
                         <div style={styles.securityWarning}>
                             <h4>Player Ativo</h4>
-                            <p>Estamos a usar o Mux Player Web Component, que oferece uma reprodução HLS robusta e tratamento de erros integrado. O problema 404 será resolvido assim que o Playback ID corresponder a um stream ativo no Mux.</p>
+                            <p>Estamos a usar o Mux Player Web Component, que oferece uma reprodução HLS robusta. O problema 404 será resolvido assim que o Playback ID corresponder a um stream ativo no Mux.</p>
                         </div>
 
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
