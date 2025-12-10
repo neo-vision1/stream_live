@@ -19,7 +19,7 @@ const CONFIGURABLE_DRONES = [
     { id: 2, name: 'Drone Bravo (Secundário)', configKey: 'drone2' as const },
 ];
 
-// Drones adicionais
+// Drones adicionais que foram removidos do display 'multi' conforme o seu pedido.
 const ADDITIONAL_DRONES = [
     { id: 3, name: 'Drone Charlie (Monitoramento)' },
     { id: 4, name: 'Drone Delta (Reserva)' },
@@ -49,7 +49,8 @@ declare global {
         interface IntrinsicElements {
             'mux-player': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement> & {
                 'playback-id': string;
-                'stream-type': string;
+                // stream-type pode ser "live", "live:dvr" ou "on-demand"
+                'stream-type': string; 
                 controls: boolean;
                 autoplay: boolean;
                 muted: boolean;
@@ -103,7 +104,6 @@ const CopyButton: React.FC<{ textToCopy: string, label: string }> = React.memo((
             tempInput.value = textToCopy;
             document.body.appendChild(tempInput);
             tempInput.select();
-            // Utilizando document.execCommand('copy') como fallback para iFrames
             document.execCommand('copy'); 
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
@@ -124,14 +124,22 @@ const CopyButton: React.FC<{ textToCopy: string, label: string }> = React.memo((
 });
 CopyButton.displayName = 'CopyButton';
 
-// Componente Player simplificado usando o Mux Web Component (sem sobreposição YOLO)
+// Componente Player simplificado usando o Mux Web Component
 const DroneStreamPlayer: React.FC<{ playbackId: string, droneName: string }> = React.memo(({ playbackId }) => {
     return (
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+            <div style={styles.statusOverlay}>
+                Status: MuxPlayer pronto. (Playback ID: {playbackId.substring(0, 8)}...)
+            </div>
+            
+            {/* MUDANÇA CRUCIAL: stream-type alterado para "live:dvr" para habilitar a linha do tempo. 
+              Isso permite ao usuário voltar e ver cenas anteriores, transformando o 
+              stream ao vivo em um feed com DVR ativado.
+            */}
             {/* @ts-ignore: O componente web mux-player não é reconhecido nativamente pelo JSX/TypeScript */}
             <mux-player
                 playback-id={playbackId}
-                stream-type="live" 
+                stream-type="live:dvr" 
                 style={{ height: '100%', width: '100%', objectFit: 'cover' }}
                 controls
                 autoplay
@@ -152,7 +160,6 @@ export default function DroneDashboard() {
     const [isConfigOpen, setIsConfigOpen] = useState(false);
     const [config, setConfig] = useState<AllConfigs>(loadConfig());
     const [expandedConfig, setExpandedConfig] = useState<string | null>('drone1'); // Controla qual drone config está aberto
-    // O estado 'isYoloActive' foi removido.
 
     // --- PERSISTÊNCIA & CARREGAMENTO DE SCRIPT ---
     useEffect(() => {
@@ -248,7 +255,7 @@ export default function DroneDashboard() {
             case 'bravo':
                 return bravoDrone ? [bravoDrone] : [];
             case 'multi':
-                // Retorna apenas o Alpha (id: 1) e o Bravo (id: 2)
+                // **Ajuste solicitado:** Retorna apenas o Alpha (id: 1) e o Bravo (id: 2)
                 return allFeeds.filter(d => d.id === 1 || d.id === 2);
             default:
                 return alphaDrone ? [alphaDrone] : [];
@@ -270,10 +277,8 @@ export default function DroneDashboard() {
             setTempRtmpKey(currentConfig.rtmpKey);
         }, [currentConfig.playbackId, currentConfig.rtmpKey]);
 
+        const fullRtmpUrl = RTMP_BASE_URL + tempRtmpKey;
         const isExpanded = expandedConfig === drone.configKey;
-
-        // URL completa da Stream RTMP (apenas para exibição)
-        const fullRtmpUrl = `${RTMP_BASE_URL}${currentConfig.rtmpKey}`;
 
         return (
             <div style={styles.configAccordionItem}>
@@ -288,16 +293,7 @@ export default function DroneDashboard() {
                         {/* --- Seção de Instruções de Transmissão RTMP --- */}
                         <div style={styles.rtmpInstructions}>
                             <h5>🚀 Instruções de Streaming para {drone.name}:</h5>
-                            <p>Envie o vídeo para este endereço RTMP:</p>
-                            <div style={styles.rtmpInputGroup}>
-                                <input
-                                    type="text"
-                                    value={fullRtmpUrl}
-                                    style={styles.inputRtmpDisplay}
-                                    readOnly
-                                />
-                                <CopyButton textToCopy={fullRtmpUrl} label="URL RTMP" />
-                            </div>
+                            <p>Envie o vídeo usando a Chave de Stream abaixo.</p>
                         </div>
                         
                         {/* INPUT: CHAVE DE STREAM */}
@@ -313,11 +309,21 @@ export default function DroneDashboard() {
                             />
                             <CopyButton textToCopy={tempRtmpKey} label="Chave" />
                         </div>
+                        <small style={styles.helpText}>Esta chave é usada para ENVIAR o vídeo para o Mux.</small>
+
+                        {/* INPUT: URL RTMP COMPLETA */}
+                        <label style={styles.configLabel}>URL RTMP Completa:</label>
+                        <div style={styles.rtmpInputGroup}>
+                            <div style={styles.rtmpDisplay}>
+                                {fullRtmpUrl}
+                            </div>
+                            <CopyButton textToCopy={fullRtmpUrl} label="URL" />
+                        </div>
                         
                         <hr style={{ border: 'none', borderBottom: '1px dashed #333', margin: '15px 0' }} />
 
                         {/* INPUT: ID DE REPRODUÇÃO */}
-                        <label style={styles.configLabel}>Playback ID:</label>
+                        <label style={styles.configLabel}>ID de Reprodução (Mux Playback ID):</label>
                         <div style={styles.rtmpInputGroup}>
                             <input
                                 type="text"
@@ -350,14 +356,11 @@ export default function DroneDashboard() {
         return (
             <div style={styles.loginContainer}>
                 <div style={styles.loginBox}>
-                    {/* SUBSTITUIÇÃO DA LOGO SUPERIOR POR TEXTO */}
-                    <h1 style={styles.loginTitleText}>NEO VISION</h1>
-                    
-                    <h1 style={{ marginBottom: '1rem', marginTop: '0.5rem', fontSize: '1.8rem' }}>Acesso Restrito ao Drone</h1>
+                    <h1 style={{ marginBottom: '1rem' }}>Acesso Restrito ao Drone</h1>
                     <form onSubmit={handleLogin} style={styles.form}>
                         <input
                             type="text"
-                            placeholder="Digite seu nome de usuário"
+                            placeholder="Digite seu nome de operador"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
                             style={styles.input}
@@ -382,14 +385,11 @@ export default function DroneDashboard() {
             <header style={styles.header}>
                 <div>
                     <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Central de Comando de Drones</h2>
-                    {/* Usuário alterado de "Operador" */}
                     <small style={{ color: '#ccc', fontSize: '0.75rem' }}>
-                        Usuário: {user.name} | ID: <span style={{ fontFamily: 'monospace' }}>{user.id}</span>
+                        Operador: {user.name} | ID: <span style={{ fontFamily: 'monospace' }}>{user.id}</span>
                     </small>
                 </div>
                 <div style={styles.headerControls}>
-
-                    {/* O BOTÃO 'VC' FOI REMOVIDO DAQUI */}
                     
                     {/* Botões de Visualização */}
                     <button 
@@ -428,21 +428,21 @@ export default function DroneDashboard() {
 
             {/* Área de Configuração */}
             {isConfigOpen && (
-                 <div style={styles.configContainer}>
-                    <h3 style={styles.configTitle}>Configuração de Feeds de Transmissão</h3>
-                    <p style={{...styles.helpText, padding: '0 1rem', margin: 0}}>Defina as chaves e IDs de reprodução para os drones Alpha e Bravo separadamente.</p>
-                    
-                    <div style={styles.configAccordion}>
-                        {CONFIGURABLE_DRONES.map(drone => (
-                            <DroneConfigForm key={drone.id} drone={drone} />
-                        ))}
-                    </div>
-                    <div style={{...styles.buttonGroup, padding: '1rem', justifyContent: 'flex-start'}}>
-                        <button onClick={() => setIsConfigOpen(false)} style={styles.buttonSecondary}>
-                            Fechar Painel de Configuração
-                        </button>
-                    </div>
-                </div>
+                   <div style={styles.configContainer}>
+                     <h3 style={styles.configTitle}>Configuração de Feeds de Transmissão</h3>
+                     <p style={{...styles.helpText, padding: '0 1rem', margin: 0}}>Defina as chaves e IDs de reprodução para os drones Alpha e Bravo separadamente.</p>
+                     
+                     <div style={styles.configAccordion}>
+                         {CONFIGURABLE_DRONES.map(drone => (
+                             <DroneConfigForm key={drone.id} drone={drone} />
+                         ))}
+                     </div>
+                     <div style={{...styles.buttonGroup, padding: '1rem', justifyContent: 'flex-start'}}>
+                         <button onClick={() => setIsConfigOpen(false)} style={styles.buttonSecondary}>
+                             Fechar Painel de Configuração
+                         </button>
+                     </div>
+                   </div>
             )}
 
 
@@ -463,10 +463,6 @@ export default function DroneDashboard() {
                                         playbackId={drone.playbackId}
                                         droneName={drone.name}
                                     />
-                                </div>
-                                {/* SUBSTITUIÇÃO DA LOGO INFERIOR POR TEXTO */}
-                                <div style={styles.logoFooter}>
-                                    <div style={styles.videoLogoText}>NEO VISION</div>
                                 </div>
                             </div>
                         ))
@@ -497,21 +493,14 @@ const styles: { [key: string]: React.CSSProperties } = {
         padding: '10px',
     },
     loginBox: {
-        padding: '2rem',
+        padding: '1.5rem',
         backgroundColor: '#222',
         borderRadius: '12px',
         border: '1px solid #333',
         textAlign: 'center' as const,
         width: '90%',
-        maxWidth: '450px',
-        boxShadow: '0 8px 30px rgba(0, 0, 0, 0.7)',
-    },
-    loginTitleText: { // Novo estilo para a logo em formato texto
-        fontSize: '2.5rem',
-        fontWeight: '900',
-        color: '#0070f3',
-        marginBottom: '1rem',
-        textShadow: '0 0 10px rgba(0, 112, 243, 0.5)',
+        maxWidth: '400px',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.6)',
     },
     form: { display: 'flex', flexDirection: 'column', gap: '1rem' },
     input: {
@@ -672,17 +661,10 @@ const styles: { [key: string]: React.CSSProperties } = {
         flex: 1,
         position: 'relative',
     },
-    logoFooter: {
-        padding: '8px',
-        backgroundColor: '#111',
-        borderTop: '1px solid #222',
-        textAlign: 'center' as const,
-    },
-    videoLogoText: { // Novo estilo para a logo de texto no rodapé do vídeo
-        fontSize: '1rem',
-        fontWeight: 'bold',
-        color: '#aaa',
-        opacity: 0.8,
+    statusOverlay: {
+        position: 'absolute' as const, bottom: 0, left: 0, zIndex: 10,
+        backgroundColor: 'rgba(0,0,0,0.6)', color: '#0f0', padding: '4px 10px', fontSize: '10px',
+        borderRadius: '0 6px 0 0',
     },
     noFeedsMessage: {
         padding: '2rem',
@@ -764,16 +746,20 @@ const styles: { [key: string]: React.CSSProperties } = {
         fontSize: '0.9rem',
         minWidth: '100px',
     },
-    inputRtmpDisplay: { // Novo estilo para o campo de URL RTMP apenas de visualização
+    rtmpDisplay: {
         flex: 1,
+        fontFamily: 'monospace',
+        backgroundColor: '#000',
         padding: '10px',
         borderRadius: '6px 0 0 6px',
-        border: '1px solid #444',
-        backgroundColor: '#111',
-        color: '#0f0',
-        fontSize: '0.9rem',
-        fontFamily: 'monospace',
-        minWidth: '100px',
+        border: '1px solid #555',
+        overflowX: 'auto',
+        whiteSpace: 'nowrap' as const,
+        color: '#ffdd00',
+        borderRight: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        fontSize: '0.8rem',
     },
     rtmpInstructions: {
         padding: '10px',
