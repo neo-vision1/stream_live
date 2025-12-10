@@ -229,8 +229,196 @@ const App = () => {
                     ))}
                 </div>
             </div>
-        </div>
-    );
-};
+          ))}
 
-export default App;
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// --- ESTILOS (CSS-in-JS) ---
+const styles: { [key: string]: React.CSSProperties } = {
+  loginContainer: {
+    height: '100vh',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#111',
+    color: '#fff',
+    fontFamily: 'sans-serif',
+  },
+  loginBox: {
+    padding: '2rem',
+    backgroundColor: '#222',
+    borderRadius: '8px',
+    border: '1px solid #333',
+    textAlign: 'center' as const,
+    width: '100%',
+    maxWidth: '400px',
+    boxShadow: '0 4px 15px rgba(0, 0, 0, 0.5)',
+  },
+  form: { display: 'flex', flexDirection: 'column', gap: '1rem' },
+  input: {
+    padding: '12px',
+    borderRadius: '6px',
+    border: '1px solid #444',
+    backgroundColor: '#333',
+    color: '#fff',
+    fontSize: '1rem',
+  },
+  buttonPrimary: {
+    padding: '12px',
+    backgroundColor: '#0070f3',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    transition: 'background-color 0.2s',
+    marginTop: '0.5rem',
+  },
+  buttonSecondary: {
+    padding: '8px 16px',
+    backgroundColor: '#333',
+    color: 'white',
+    border: '1px solid #555',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+  },
+  buttonDanger: {
+    padding: '8px 16px',
+    backgroundColor: '#e00',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+  },
+  dashboardContainer: {
+    minHeight: '100vh',
+    backgroundColor: '#0a0a0a',
+    color: '#fff',
+    fontFamily: 'sans-serif',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  header: {
+    padding: '1rem 2rem',
+    backgroundColor: '#1a1a1a',
+    borderBottom: '1px solid #333',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  mainContent: {
+    flex: 1,
+    padding: '2rem',
+    display: 'flex',
+    justifyContent: 'center',
+  },
+  singleContainer: {
+    width: '100%',
+    maxWidth: '1000px',
+    height: '600px',
+  },
+  gridContainer: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+    gap: '1.5rem',
+    width: '100%',
+  },
+  videoCard: {
+    backgroundColor: '#000',
+    borderRadius: '8px',
+    overflow: 'hidden',
+    border: '1px solid #333',
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%',
+    minHeight: '300px',
+  },
+  videoHeader: {
+    padding: '0.5rem 1rem',
+    backgroundColor: '#111',
+    borderBottom: '1px solid #222',
+    display: 'flex',
+    alignItems: 'center',
+    fontSize: '0.9rem',
+    fontWeight: 'bold',
+  },
+  statusDotActive: {
+    height: '10px',
+    width: '10px',
+    backgroundColor: '#0f0',
+    borderRadius: '50%',
+    display: 'inline-block',
+    marginRight: '8px',
+    boxShadow: '0 0 5px #0f0',
+  },
+  statusDotInactive: {
+    height: '10px',
+    width: '10px',
+    backgroundColor: '#888',
+    borderRadius: '50%',
+    display: 'inline-block',
+    marginRight: '8px',
+  },
+  playerWrapper: {
+    flex: 1,
+    position: 'relative',
+  },
+  configContainer: {
+    width: '100%',
+    maxWidth: '1000px',
+    margin: '1rem auto 0',
+    backgroundColor: '#1c1c1c',
+    borderRadius: '8px',
+    border: '1px solid #444',
+    overflow: 'hidden',
+    boxShadow: '0 4px 15px rgba(0, 0, 0, 0.4)',
+  },
+  configHeader: {
+    padding: '1rem',
+    backgroundColor: '#282828',
+    cursor: 'pointer',
+    borderBottom: '1px solid #444',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  configForm: {
+    padding: '1.5rem',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+  configLabel: {
+    marginTop: '5px',
+    fontWeight: 'bold',
+    color: '#ddd',
+  },
+  helpText: {
+    fontSize: '0.75rem',
+    color: '#aaa',
+    marginBottom: '10px',
+  },
+  rtmpDisplay: {
+    fontFamily: 'monospace',
+    backgroundColor: '#000',
+    padding: '10px',
+    borderRadius: '4px',
+    border: '1px solid #555',
+    overflowX: 'auto',
+    whiteSpace: 'nowrap',
+    color: '#0f0',
+  },
+  securityWarning: {
+    padding: '15px',
+    backgroundColor: '#330000',
+    border: '1px solid #ff4444',
+    borderRadius: '6px',
+    marginBottom: '20px',
+  },
+};
