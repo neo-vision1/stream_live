@@ -1,590 +1,236 @@
-"use client neo";
-
 import React, { useState, useEffect } from 'react';
-// IMPORTANTE: A linha 'import MuxPlayer from "@mux/mux-player-react";' não é suportada 
-// neste ambiente de ficheiro único React. Em vez disso, usamos o Mux Player Web Component (<mux-player>), 
-// que é carregado dinamicamente no <head> para fornecer a mesma funcionalidade.
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { 
+    getFirestore, collection, query, onSnapshot, 
+    addDoc, serverTimestamp, doc, deleteDoc 
+} from 'firebase/firestore';
 
-// --- CONFIGURAÇÕES E DADOS DE TESTE ---
-// Playback ID de teste padrão (VOD Mux de demonstração)
-const DEFAULT_PLAYBACK_ID = 'kP5C71e800M2H35Hn7l77457Xy44600102Ld0234'; 
-const DEFAULT_RTMP_KEY = '8e2849be-3829-8a6b-2bc4-bce86a83bf62';
-const RTMP_BASE_URL = 'rtmp://global-live.mux.com:5222/app/';
+// --- CONFIGURAÇÃO E INICIALIZAÇÃO DO FIREBASE ---
+// Variáveis globais fornecidas pelo ambiente
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-// Simulação de feeds de drones secundários.
-const SECONDARY_DRONES = [
-    { id: 2, name: 'Drone Bravo (Secundário)' },
-    { id: 3, name: 'Drone Charlie (Monitoramento)' },
-    { id: 4, name: 'Drone Delta (Reserva)' },
-];
+// Inicializa o Firebase
+const app = firebaseConfig && Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
+const auth = app ? getAuth(app) : null;
+const db = app ? getFirestore(app) : null;
 
-// Tipagem para configuração e utilizadores
-interface DroneConfig {
-    playbackId: string;
-    rtmpKey: string;
-}
-interface StoredUser {
-    name: string;
-    id: string;
-}
-
-// Declaramos a interface para o componente web, pois o TypeScript não o reconhece nativamente.
-declare global {
-    namespace JSX {
-        interface IntrinsicElements {
-            'mux-player': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement> & {
-                'playback-id': string;
-                'stream-type': string;
-                controls: boolean;
-                autoplay: boolean;
-                muted: boolean;
-                style: React.CSSProperties;
-            }, HTMLElement>;
-        }
-    }
-}
-
-// --- FUNÇÕES DE ARMAZENAMENTO SIMPLES (USANDO LOCALSTORAGE PARA PERSISTÊNCIA) ---
-const saveUser = (user: StoredUser) => {
-    localStorage.setItem('currentUser', JSON.stringify(user));
-};
-const loadUser = (): StoredUser | null => {
-    try {
-        const savedUser = localStorage.getItem('currentUser');
-        return savedUser ? JSON.parse(savedUser) : null;
-    } catch (e) {
-        console.error("Erro ao carregar utilizador:", e);
-        return null;
-    }
-};
-
-// --- COMPONENTES AUXILIARES ---
-
-// Componente para copiar texto para a área de transferência
-const CopyButton: React.FC<{ textToCopy: string, label: string }> = ({ textToCopy, label }) => {
-    const [copied, setCopied] = useState(false);
-
-    const handleCopy = () => {
-        try {
-            const tempInput = document.createElement('textarea');
-            tempInput.value = textToCopy;
-            document.body.appendChild(tempInput);
-            tempInput.select();
-            document.execCommand('copy');
-            document.body.removeChild(tempInput);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        } catch (err) {
-            console.error('Falha ao copiar:', err);
-        }
-    };
-
-    return (
-        <button
-            onClick={handleCopy}
-            style={styles.copyButton}
-            title={`Copiar ${label}`}
-        >
-            {copied ? '✅ Copiado!' : `📋 Copiar ${label}`}
-        </button>
-    );
-};
-
-// Componente Player simplificado usando o Mux Web Component
-const DroneStreamPlayer: React.FC<{ playbackId: string, droneName: string }> = ({ playbackId }) => {
-    // Usamos a tag <mux-player> diretamente.
-    return (
-        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-            <div style={styles.statusOverlay}>
-                Status: MuxPlayer pronto. (Aguardando stream...)
-            </div>
-            
-            {/* O Mux Web Component lida com a reprodução HLS e erros (como 404) automaticamente. */}
-            <mux-player
-                playback-id={playbackId}
-                stream-type="live" // Define como Live Stream
-                style={{ height: '100%', width: '100%', objectFit: 'cover' }}
-                controls
-                autoplay
-                muted
-            />
-        </div>
-    );
-};
-
-
-export default function DroneDashboard() {
-    // --- ESTADOS ---
-    const [username, setUsername] = useState('');
-    const [user, setUser] = useState<StoredUser | null>(null);
-    const [isMultiView, setIsMultiView] = useState(false);
-    const [isConfigOpen, setIsConfigOpen] = useState(false);
-    const [config, setConfig] = useState<DroneConfig>({
-        playbackId: DEFAULT_PLAYBACK_ID,
-        rtmpKey: DEFAULT_RTMP_KEY,
+// Função auxiliar para converter o timestamp do Firestore
+const formatTimestamp = (timestamp) => {
+    if (!timestamp || !timestamp.toDate) return 'Aguardando...';
+    return timestamp.toDate().toLocaleString('pt-BR', { 
+        year: 'numeric', month: 'short', day: 'numeric', 
+        hour: '2-digit', minute: '2-digit' 
     });
+};
 
-    // --- PERSISTÊNCIA & CARREGAMENTO DE SCRIPT (CARREGAR ESTADOS INICIAIS) ---
+// Componente Principal
+const App = () => {
+    // Estado para a lista de eventos da Linha do Tempo
+    const [events, setEvents] = useState([]);
+    // Estado para o texto do novo evento a ser adicionado
+    const [newEventText, setNewEventText] = useState('');
+    // Estados do Firebase
+    const [userId, setUserId] = useState(null);
+    const [isAuthReady, setIsAuthReady] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    // 1. Efeito para Inicialização da Autenticação
     useEffect(() => {
-        // 1. Carrega o Mux Player Web Component Script
-        // Isso permite o uso da tag <mux-player> no nosso JSX.
-        if (typeof document !== 'undefined' && !document.querySelector('script[src*="mux-player"]')) {
-            const script = document.createElement('script');
-            // Usamos a URL Unpkg para carregar o Web Component de forma independente.
-            script.src = 'https://unpkg.com/@mux/mux-player';
-            script.async = true;
-            document.head.appendChild(script);
-            console.log("Mux Player Web Component script loaded.");
+        if (!auth) {
+            setError("Configuração do Firebase ausente.");
+            setIsAuthReady(true);
+            setIsLoading(false);
+            return;
         }
 
-        // 2. Carrega o utilizador da sessão anterior
-        setUser(loadUser());
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                setUserId(user.uid);
+            } else {
+                // Tenta autenticar com token customizado (se fornecido)
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        // Caso contrário, usa autenticação anônima
+                        await signInAnonymously(auth);
+                    }
+                } catch (e) {
+                    console.error("Falha na autenticação:", e);
+                    // Se falhar, usa um UUID temporário, mas as regras de segurança podem bloquear o Firestore
+                    setUserId(crypto.randomUUID()); 
+                }
+            }
+            setIsAuthReady(true);
+            // O loading só termina após a primeira checagem de auth
+            if (isLoading) setIsLoading(false); 
+        });
 
-        // 3. Carrega a configuração do drone (IDs)
-        const savedConfig = localStorage.getItem('droneConfig');
-        if (savedConfig) {
-            setConfig(JSON.parse(savedConfig));
-        }
+        return () => unsubscribe();
     }, []);
 
-    // --- FUNÇÕES DE AUTENTICAÇÃO E CONFIGURAÇÃO ---
-    const handleLogin = (e: React.FormEvent) => {
+    // 2. Efeito para Escuta em Tempo Real (onSnapshot) dos Eventos
+    useEffect(() => {
+        // Garantir que a autenticação está pronta e o DB inicializado
+        if (!isAuthReady || !userId || !db) return;
+
+        setIsLoading(true);
+        setError(null);
+
+        // Caminho da coleção de dados privados: /artifacts/{appId}/users/{userId}/timeline_events
+        const timelineCollectionPath = `artifacts/${appId}/users/${userId}/timeline_events`;
+        const q = query(collection(db, timelineCollectionPath));
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const fetchedEvents = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+            }));
+            // Ordenar por data (mais recente primeiro)
+            fetchedEvents.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+            
+            setEvents(fetchedEvents);
+            setIsLoading(false);
+        }, (err) => {
+            console.error("Erro ao carregar dados da Linha do Tempo:", err);
+            setError(`Falha ao carregar eventos: ${err.message}. Verifique as regras de segurança.`);
+            setIsLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, [isAuthReady, userId, db]); // Depende do estado de autenticação e dos objetos Firebase
+
+    // Função para adicionar um novo evento à Linha do Tempo
+    const addEvent = async (e) => {
         e.preventDefault();
-        if (!username.trim()) return;
+        if (!newEventText.trim() || !userId || !db) return;
 
-        // Gera um ID único simples e guarda a sessão
-        const uniqueId = `user-${Math.floor(Math.random() * 10000)}`;
-        const loggedUser = { name: username, id: uniqueId };
-        setUser(loggedUser);
-        saveUser(loggedUser);
+        const timelineCollectionPath = `artifacts/${appId}/users/${userId}/timeline_events`;
+
+        try {
+            await addDoc(collection(db, timelineCollectionPath), {
+                text: newEventText.trim(),
+                createdAt: serverTimestamp(),
+            });
+            setNewEventText('');
+        } catch (error) {
+            console.error("Erro ao adicionar evento:", error);
+            setError("Não foi possível adicionar o evento. Tente novamente.");
+        }
     };
 
-    const handleLogout = () => {
-        setUser(null);
-        localStorage.removeItem('currentUser');
+    // Função para deletar um evento
+    const deleteEvent = async (id) => {
+        if (!userId || !db) return;
+
+        const timelineDocPath = `artifacts/${appId}/users/${userId}/timeline_events/${id}`;
+
+        try {
+            await deleteDoc(doc(db, timelineDocPath));
+        } catch (error) {
+            console.error("Erro ao deletar evento:", error);
+            setError("Não foi possível deletar o evento.");
+        }
     };
+    
+    // UI Render
+    return (
+        <div className="min-h-screen bg-gray-50 p-4 sm:p-8 font-sans">
+            <div className="max-w-4xl mx-auto">
+                <header className="text-center mb-10 p-4 bg-white shadow-lg rounded-xl">
+                    <h1 className="text-4xl font-extrabold text-indigo-700 tracking-tight mb-2">
+                        Linha do Tempo de Eventos
+                    </h1>
+                    <p className="text-gray-600">
+                        Seu diário de eventos persistente. Usando Firebase Firestore para sincronização em tempo real.
+                    </p>
+                    <div className="mt-2 text-xs text-gray-500">
+                        <span className="font-semibold">ID do Usuário:</span> <code className="bg-gray-100 p-1 rounded text-pink-500">{userId || 'Autenticando...'}</code>
+                    </div>
+                </header>
 
-    const saveConfig = (e: React.FormEvent, newPlaybackId: string, newRtmpKey: string) => {
-        e.preventDefault();
-        const newConfig = {
-            playbackId: newPlaybackId.trim(),
-            rtmpKey: newRtmpKey.trim(),
-        };
-        setConfig(newConfig);
-        localStorage.setItem('droneConfig', JSON.stringify(newConfig));
-        setIsConfigOpen(false);
-    };
-
-    const toggleView = () => setIsMultiView(!isMultiView);
-
-    // --- RENDERIZAÇÃO: TELA DE CONFIGURAÇÃO (Formulário) ---
-    const ConfigForm = () => {
-        const [tempPlaybackId, setTempPlaybackId] = useState(config.playbackId);
-        const [tempRtmpKey, setTempRtmpKey] = useState(config.rtmpKey);
-
-        const fullRtmpUrl = RTMP_BASE_URL + tempRtmpKey;
-
-        return (
-            <div style={styles.configContainer}>
-                <div style={styles.configHeader} onClick={() => setIsConfigOpen(!isConfigOpen)}>
-                    <h3>
-                        {isConfigOpen ? '➖' : '➕'} Configuração do Drone Principal (ID 1)
-                    </h3>
-                </div>
-                {isConfigOpen && (
-                    <form onSubmit={(e) => saveConfig(e, tempPlaybackId, tempRtmpKey)} style={styles.configForm}>
-
-                        {/* --- Seção de Instruções de Transmissão RTMP --- */}
-                        <div style={styles.rtmpInstructions}>
-                            <h4>🚀 Para Iniciar a Transmissão (Streaming):</h4>
-                            <p>1. O seu drone (ou software de codificação como OBS Studio) deve enviar o vídeo para o URL abaixo.</p>
-                            <p>2. **VERIFIQUE O MUX:** Confirme no seu painel Mux que a Live Stream está no estado **"Active"** (Ativa). O player só funcionará se o Mux estiver a receber o sinal RTMP.</p>
-                        </div>
-                        
-                        {/* INPUT: CHAVE DE STREAM */}
-                        <label style={styles.configLabel}>Chave de Stream (RTMP Key):</label>
-                        <div style={styles.rtmpInputGroup}>
-                            <input
-                                type="text"
-                                value={tempRtmpKey}
-                                onChange={(e) => setTempRtmpKey(e.target.value)}
-                                placeholder="Cole a Stream Key aqui (Ex: sua_chave_de_stream_mux)"
-                                style={styles.inputRtmp}
-                                required
-                            />
-                            <CopyButton textToCopy={tempRtmpKey} label="Chave" />
-                        </div>
-                        <small style={styles.helpText}>Esta chave é usada para ENVIAR o vídeo para o Mux.</small>
-
-                        {/* INPUT: URL RTMP COMPLETA */}
-                        <label style={styles.configLabel}>URL RTMP Completa para o Codificador:</label>
-                        <div style={styles.rtmpInputGroup}>
-                            <div style={styles.rtmpDisplay}>
-                                {fullRtmpUrl}
-                            </div>
-                            <CopyButton textToCopy={fullRtmpUrl} label="URL" />
-                        </div>
-                        <small style={styles.helpText}>Para OBS Studio: Servidor RTMP é *{RTMP_BASE_URL}* e a Chave de Stream é a *chave acima*.</small>
-                        <hr style={{ border: 'none', borderBottom: '1px solid #333', margin: '15px 0' }} />
-
-                        {/* INPUT: ID DE REPRODUÇÃO */}
-                        <label style={styles.configLabel}>ID de Reprodução (Mux Playback ID):</label>
-                        <div style={styles.rtmpInputGroup}>
-                            <input
-                                type="text"
-                                value={tempPlaybackId}
-                                onChange={(e) => setTempPlaybackId(e.target.value)}
-                                placeholder="Cole o Playback ID aqui (Ex: ce55dde1...)"
-                                style={styles.inputRtmp}
-                                required
-                            />
-                            <CopyButton textToCopy={tempPlaybackId} label="ID" />
-                        </div>
-                        <small style={styles.helpText}>
-                            **AVISO:** O ID de Reprodução padrão é um vídeo de teste. Para ver o seu stream ao vivo,
-                            deve substituí-lo pelo Playback ID do seu Live Stream Mux **ativo**.
-                        </small>
-
-                        <div style={styles.securityWarning}>
-                            <h4>Player Ativo</h4>
-                            <p>Estamos a usar o Mux Player Web Component, que oferece uma reprodução HLS robusta e tratamento de erros integrado. O problema 404 será resolvido assim que o Playback ID corresponder a um stream ativo no Mux.</p>
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                            <button type="button" onClick={() => setIsConfigOpen(false)} style={styles.buttonSecondary}>
-                                Cancelar
-                            </button>
-                            <button type="submit" style={styles.buttonPrimary}>
-                                Salvar Configuração
-                            </button>
-                        </div>
-                    </form>
-                )}
-            </div>
-        );
-    };
-
-
-    // --- RENDERIZAÇÃO: TELA DE LOGIN ---
-    if (!user) {
-        return (
-            <div style={styles.loginContainer}>
-                <div style={styles.loginBox}>
-                    <h1 style={{ marginBottom: '1rem' }}>Acesso Restrito ao Drone</h1>
-                    <form onSubmit={handleLogin} style={styles.form}>
+                {/* Formulário para Adicionar Novo Evento */}
+                <form onSubmit={addEvent} className="mb-8 p-6 bg-white rounded-xl shadow-lg border border-indigo-200">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Adicionar Novo Evento</h2>
+                    <div className="flex flex-col sm:flex-row gap-4">
                         <input
                             type="text"
-                            placeholder="Digite seu nome de operador"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            style={styles.input}
-                            required
+                            value={newEventText}
+                            onChange={(e) => setNewEventText(e.target.value)}
+                            placeholder="Descreva o evento (ex: Lançamento do Produto Alfa)"
+                            className="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
+                            disabled={!isAuthReady}
                         />
-                        <button type="submit" style={styles.buttonPrimary}>
-                            Entrar no Sistema
+                        <button
+                            type="submit"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-[1.02] disabled:opacity-50"
+                            disabled={!newEventText.trim() || !isAuthReady || isLoading}
+                        >
+                            {isLoading ? 'Carregando...' : 'Adicionar Evento'}
                         </button>
-                        <small style={styles.helpText}>O login é salvo localmente para facilitar o teste.</small>
-                    </form>
-                </div>
-            </div>
-        );
-    }
+                    </div>
+                </form>
 
-    // --- RENDERIZAÇÃO: DASHBOARD DO DRONE ---
-    // Os feeds secundários usam o mesmo Playback ID do feed principal
-    const activeFeeds = [
-        { id: 1, name: 'Drone Alpha (Principal)', playbackId: config.playbackId },
-        ...SECONDARY_DRONES.map(drone => ({ ...drone, playbackId: config.playbackId }))
-    ];
+                {/* Feedback e Status */}
+                {error && (
+                    <div className="p-4 mb-6 bg-red-100 border border-red-400 text-red-700 rounded-lg shadow-md">
+                        <p className="font-bold">Erro de Dados:</p>
+                        <p>{error}</p>
+                    </div>
+                )}
 
-    return (
-        <div style={styles.dashboardContainer}>
-            {/* Cabeçalho */}
-            <header style={styles.header}>
-                <div>
-                    <h2 style={{ margin: 0 }}>Central de Comando de Drones</h2>
-                    <small style={{ color: '#ccc' }}>
-                        Operador: {user.name} | ID: <span style={{ fontFamily: 'monospace' }}>{user.id}</span>
-                    </small>
-                </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                    <button onClick={() => setIsConfigOpen(!isConfigOpen)} style={styles.buttonSecondary}>
-                        ⚙️ {isConfigOpen ? 'Fechar Config' : 'Configurar Stream'}
-                    </button>
-                    <button onClick={toggleView} style={styles.buttonSecondary}>
-                        {isMultiView ? '👁️ Ver Único' : '🎥 Ver Múltiplos (Grid)'}
-                    </button>
-                    <button onClick={handleLogout} style={styles.buttonDanger}>
-                        Sair
-                    </button>
-                </div>
-            </header>
+                {isLoading && (
+                    <div className="text-center p-8 text-indigo-500 font-medium">
+                        <div className="animate-spin inline-block w-6 h-6 border-4 border-t-transparent border-indigo-500 rounded-full mr-3"></div>
+                        Carregando eventos da Linha do Tempo...
+                    </div>
+                )}
 
-            {/* Formulário de Configuração (Abre/Fecha) */}
-            <ConfigForm />
+                {/* Visualização da Linha do Tempo */}
+                <div className="relative border-l-4 border-indigo-300 ml-4 pl-4 space-y-8">
+                    {!isLoading && events.length === 0 && (
+                         <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-300 text-center text-gray-500">
+                            Nenhum evento na linha do tempo ainda. Adicione o primeiro!
+                        </div>
+                    )}
 
-
-            {/* Área de Vídeo */}
-            <main style={styles.mainContent}>
-                <div style={isMultiView ? styles.gridContainer : styles.singleContainer}>
-
-                    {(isMultiView ? activeFeeds : [activeFeeds[0]]).map((drone) => (
-                        <div key={drone.id} style={styles.videoCard}>
-                            <div style={styles.videoHeader}>
-                                {/* O statusDot usa uma cor simples para o drone principal (ID 1) */}
-                                <span style={drone.id === 1 ? styles.statusDotActive : styles.statusDotInactive}></span>
-                                {drone.name}
+                    {events.map((event, index) => (
+                        <div 
+                            key={event.id} 
+                            className="relative mb-6 p-5 bg-white rounded-xl shadow-2xl transition duration-300 ease-in-out hover:shadow-indigo-300/50 group"
+                        >
+                            {/* Ponto da Linha do Tempo */}
+                            <div className="absolute -left-7 top-0 w-4 h-4 bg-indigo-600 rounded-full border-4 border-white transform translate-x-1/2 group-hover:bg-pink-500 transition"></div>
+                            
+                            <div className="flex justify-between items-start">
+                                <p className="text-lg font-semibold text-gray-800 break-words pr-10">
+                                    {event.text}
+                                </p>
+                                <button
+                                    onClick={() => deleteEvent(event.id)}
+                                    className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded-full absolute top-2 right-2"
+                                    aria-label="Deletar Evento"
+                                >
+                                    {/* Icone SVG de Lixeira */}
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 011 1v6a1 1 0 11-2 0V9a1 1 0 011-1zm7 1a1 1 0 00-2 0v6a1 1 0 102 0V9z" clipRule="evenodd" />
+                                    </svg>
+                                </button>
                             </div>
-                            <div style={styles.playerWrapper}>
-                                <DroneStreamPlayer
-                                    playbackId={drone.playbackId}
-                                    droneName={drone.name}
-                                />
-                            </div>
+                            
+                            <p className="mt-2 text-sm text-indigo-500 font-medium">
+                                {formatTimestamp(event.createdAt)}
+                            </p>
                         </div>
                     ))}
-
                 </div>
-            </main>
+            </div>
         </div>
     );
-}
-
-// --- ESTILOS (CSS-in-JS) ---
-const styles: { [key: string]: React.CSSProperties } = {
-    loginContainer: {
-        height: '100vh',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#111',
-        color: '#fff',
-        fontFamily: 'Inter, sans-serif',
-        padding: '20px',
-    },
-    loginBox: {
-        padding: '2rem',
-        backgroundColor: '#222',
-        borderRadius: '12px',
-        border: '1px solid #333',
-        textAlign: 'center' as const,
-        width: '100%',
-        maxWidth: '400px',
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.6)',
-    },
-    form: { display: 'flex', flexDirection: 'column', gap: '1rem' },
-    input: {
-        padding: '12px',
-        borderRadius: '8px',
-        border: '1px solid #444',
-        backgroundColor: '#333',
-        color: '#fff',
-        fontSize: '1rem',
-        boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.2)',
-    },
-    inputRtmp: {
-        flex: 1,
-        padding: '10px',
-        borderRadius: '6px 0 0 6px',
-        border: '1px solid #444',
-        backgroundColor: '#333',
-        color: '#fff',
-        fontSize: '0.9rem',
-    },
-    buttonPrimary: {
-        padding: '12px',
-        backgroundColor: '#0070f3',
-        color: 'white',
-        border: 'none',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontWeight: 'bold',
-        transition: 'background-color 0.2s, transform 0.1s',
-        marginTop: '0.5rem',
-        boxShadow: '0 4px 6px rgba(0, 112, 243, 0.3)',
-    },
-    buttonSecondary: {
-        padding: '8px 16px',
-        backgroundColor: '#333',
-        color: 'white',
-        border: '1px solid #555',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        transition: 'background-color 0.2s, border-color 0.2s',
-    },
-    buttonDanger: {
-        padding: '8px 16px',
-        backgroundColor: '#e00',
-        color: 'white',
-        border: 'none',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        transition: 'background-color 0.2s',
-    },
-    copyButton: {
-        padding: '10px 15px',
-        backgroundColor: '#0f0',
-        color: '#111',
-        border: 'none',
-        borderRadius: '0 6px 6px 0',
-        cursor: 'pointer',
-        fontWeight: 'bold',
-        fontSize: '0.9rem',
-        transition: 'background-color 0.2s',
-        whiteSpace: 'nowrap' as const,
-    },
-    dashboardContainer: {
-        minHeight: '100vh',
-        backgroundColor: '#0a0a0a',
-        color: '#fff',
-        fontFamily: 'Inter, sans-serif',
-        display: 'flex',
-        flexDirection: 'column',
-    },
-    header: {
-        padding: '1rem 2rem',
-        backgroundColor: '#1a1a1a',
-        borderBottom: '1px solid #333',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    mainContent: {
-        flex: 1,
-        padding: '20px',
-        display: 'flex',
-        justifyContent: 'center',
-    },
-    singleContainer: {
-        width: '100%',
-        maxWidth: '1000px',
-        height: '60vh', // Altura relativa para melhor adaptação
-    },
-    gridContainer: {
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-        gap: '1.5rem',
-        width: '100%',
-    },
-    videoCard: {
-        backgroundColor: '#000',
-        borderRadius: '10px',
-        overflow: 'hidden',
-        border: '2px solid #333',
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        minHeight: '300px',
-        boxShadow: '0 0 10px rgba(0, 0, 0, 0.5)',
-    },
-    videoHeader: {
-        padding: '0.75rem 1rem',
-        backgroundColor: '#111',
-        borderBottom: '1px solid #222',
-        display: 'flex',
-        alignItems: 'center',
-        fontSize: '1rem',
-        fontWeight: 'bold',
-    },
-    statusDotActive: {
-        height: '10px',
-        width: '10px',
-        backgroundColor: '#0f0',
-        borderRadius: '50%',
-        display: 'inline-block',
-        marginRight: '8px',
-        boxShadow: '0 0 5px #0f0',
-    },
-    statusDotInactive: {
-        height: '10px',
-        width: '10px',
-        backgroundColor: '#888',
-        borderRadius: '50%',
-        display: 'inline-block',
-        marginRight: '8px',
-    },
-    playerWrapper: {
-        flex: 1,
-        position: 'relative',
-    },
-    errorBanner: {
-        position: 'absolute' as const, top: 0, left: 0, right: 0, zIndex: 10,
-        backgroundColor: 'rgba(255,0,0,0.8)', color: 'white', padding: '10px', fontSize: '12px',
-        textAlign: 'center' as const,
-    },
-    statusOverlay: {
-        position: 'absolute' as const, bottom: 0, left: 0, zIndex: 10,
-        backgroundColor: 'rgba(0,0,0,0.6)', color: '#0f0', padding: '4px 10px', fontSize: '10px',
-        borderRadius: '0 6px 0 0',
-    },
-    configContainer: {
-        width: '100%',
-        maxWidth: '1000px',
-        margin: '1rem auto 0',
-        backgroundColor: '#1c1c1c',
-        borderRadius: '10px',
-        border: '1px solid #444',
-        overflow: 'hidden',
-        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.4)',
-    },
-    configHeader: {
-        padding: '1rem',
-        backgroundColor: '#282828',
-        cursor: 'pointer',
-        borderBottom: '1px solid #444',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        borderRadius: '10px 10px 0 0',
-    },
-    configForm: {
-        padding: '1.5rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '10px',
-    },
-    configLabel: {
-        marginTop: '10px',
-        fontWeight: 'bold',
-        color: '#ddd',
-        fontSize: '0.9rem',
-    },
-    helpText: {
-        fontSize: '0.75rem',
-        color: '#aaa',
-        marginBottom: '10px',
-    },
-    rtmpInputGroup: {
-        display: 'flex',
-        width: '100%',
-    },
-    rtmpDisplay: {
-        flex: 1,
-        fontFamily: 'monospace',
-        backgroundColor: '#000',
-        padding: '10px',
-        borderRadius: '6px 0 0 6px',
-        border: '1px solid #555',
-        overflowX: 'auto',
-        whiteSpace: 'nowrap' as const,
-        color: '#ffdd00',
-        borderRight: 'none',
-        display: 'flex',
-        alignItems: 'center',
-        fontSize: '0.9rem',
-    },
-    rtmpInstructions: {
-        padding: '15px',
-        backgroundColor: '#002244',
-        border: '1px solid #0070f3',
-        borderRadius: '6px',
-        marginBottom: '20px',
-    },
-    securityWarning: {
-        padding: '15px',
-        backgroundColor: '#330000',
-        border: '1px solid #ff4444',
-        borderRadius: '6px',
-        marginTop: '20px',
-    },
 };
+
+export default App;
